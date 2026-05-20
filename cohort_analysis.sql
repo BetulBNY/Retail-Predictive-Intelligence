@@ -3,7 +3,7 @@
 --------------------------------------------------------------------------------------------------
 SELECT COUNT(*) FROM cleaned_retail_data;
 
--- 1) FINDING CUSTOMER CHURN RATE:
+-- 1) TIME BASED COHORT:
 /*
 	cleaned_retail_data tablosunu kullanarak müşterilerin tutundurma oranlarını (retention rate) ve bizi ne kadar 
 	sürede terk ettiklerini (churn) analiz ettim. Bu süreçte her müşterinin ilk alışveriş tarihini 
@@ -69,3 +69,54 @@ FROM cohort_counts;
   Verileri inceledğimde Aralık 2009 haricindeki base monthlara baktığımda müşterilerin %80'i ikinci aydan
   itibaren azalıyor.
   */ 
+
+-- ===============================================================================================
+-- 2) GEOGRAPHIC BASED COHORT (COĞRAFİ BAZLI KOHORT)
+-- ===============================================================================================
+/*
+	Time-based analizden elde ettiğim içgörüleri derinleştirmek ve pazarlama/operasyon ekiplerine ülkesel 
+	stratejiler sunabilmek adına kohort gruplarını coğrafi bazda ayırdım.
+*/
+
+WITH cohort_birth AS (
+    SELECT 
+        customer_id AS customer_id,
+        DATE_TRUNC('month', MIN(invoicedate)) AS first_order_month
+    FROM cleaned_retail_data
+    GROUP BY customer_id
+),
+purcashe_months AS (
+    SELECT DISTINCT
+        cb.customer_id,
+        first_order_month,
+        DATE_TRUNC('month', invoicedate) AS purchase_month,
+        cr.country                                        -- Country sütunu buradan çekildi
+    FROM cohort_birth AS cb
+    JOIN cleaned_retail_data AS cr ON cb.customer_id = cr.customer_id
+),
+month_diffs AS (
+    SELECT
+        *,
+        (EXTRACT(YEAR FROM purchase_month) - EXTRACT(YEAR FROM first_order_month)) * 12 + 
+         EXTRACT(MONTH FROM purchase_month) - EXTRACT(MONTH FROM first_order_month) AS month_number
+    FROM purcashe_months
+),
+cohort_geo_counts AS (
+    SELECT 
+        country,                      
+        first_order_month,
+        month_number,
+        COUNT(DISTINCT customer_id) AS numb_of_custo
+    FROM month_diffs
+    GROUP BY country, first_order_month, month_number
+)
+SELECT 
+    country,
+    first_order_month,
+    month_number,
+    numb_of_custo,
+    FIRST_VALUE(numb_of_custo) OVER(PARTITION BY country, first_order_month ORDER BY month_number) AS base_customers,
+    ROUND((numb_of_custo::numeric / FIRST_VALUE(numb_of_custo) OVER(PARTITION BY country, first_order_month ORDER BY month_number)) * 100, 2) AS retention_rate
+FROM cohort_geo_counts
+ORDER BY country, first_order_month, month_number;
+
