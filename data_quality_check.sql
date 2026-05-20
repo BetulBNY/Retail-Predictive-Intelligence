@@ -110,7 +110,6 @@ WHERE "Invoice" NOT LIKE 'C%' AND "Quantity" <= 0;
 * Aksiyon: Bu 3,457 satır gerçek bir satışı temsil etmediği için veri setinden doğrudan silinmelidir (Drop).
 */
 
-
 ---------------------------------------------
 -- 5) COUNTRY DISTRIBUTION
 ---------------------------------------------
@@ -129,3 +128,25 @@ LIMIT 5;
 * Stratejik Çıkarım: Yapılacak müşteri segmentasyonu veya talep tahminleme modelleri "UK" ve "Non-UK (Yurt Dışı)" olarak iki ana kola ayrılırsa model başarısı artacaktır.
 */
 
+---------------------------------------------
+-- 6) DEDUPLICATION CHECK
+---------------------------------------------
+-- Subquery Version
+SELECT * FROM (
+	SELECT
+		*,
+		ROW_NUMBER() OVER(PARTITION BY "Invoice", "StockCode", "Description", "Quantity", "InvoiceDate", "Price", "Customer ID", "Country") AS row_numb
+	FROM raw_retail_data) as deduplicated_table
+WHERE row_numb >= 2;
+
+-- CTE version
+WITH dedup_table AS (
+	SELECT
+		*,
+		ROW_NUMBER() OVER(PARTITION BY "Invoice", "StockCode", "Description", "Quantity", "InvoiceDate", "Price", "Customer ID", "Country") AS row_numb
+	FROM raw_retail_data
+)
+SELECT 
+	COUNT(*)
+FROM dedup_table
+WHERE row_numb >= 2 	
