@@ -1,6 +1,7 @@
 --------------------------------------------------------------------------------------------------
 --------------------------------------- CLEANING DATA -------------------------------------------- 
 --------------------------------------------------------------------------------------------------
+-- DROP TABLE cleaned_retail_data
 CREATE TABLE cleaned_retail_data AS
 WITH de_duplicated AS (
     -- Cleaning Duplicated rows
@@ -16,7 +17,7 @@ SELECT
 	"InvoiceDate" AS invoiceDate,
 	"Customer ID" AS customer_id,
 	"Country" AS country,
-	("Quantity" * "Price") AS total_revenue   
+	ROUND(("Quantity" * "Price")::numeric,2) AS total_revenue   
 
 FROM de_duplicated
 WHERE rn = 1
