@@ -15,6 +15,7 @@ SELECT
 	UPPER("Description") AS description, 
 	"Quantity" AS quantity,
 	"InvoiceDate" AS invoiceDate,
+	"Price" AS price,
 	"Customer ID" AS customer_id,
 	"Country" AS country,
 	ROUND(("Quantity" * "Price")::numeric,2) AS total_revenue   
@@ -26,3 +27,5 @@ WHERE rn = 1
 	AND "Quantity" > 0
 	AND "Invoice" NOT LIKE 'C%'
 	AND "Description" ~ '^[A-Z]';
+
+-- SELECT * FROM cleaned_retail_data;
