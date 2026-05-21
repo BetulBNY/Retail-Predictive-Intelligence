@@ -14,17 +14,26 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  ingest:
-    build: .
-    container_name: data_ingest
-    env_file:        
-      - .env  
-    environment:
-    - PYTHONUNBUFFERED=1
-    depends_on:
-    - postgres
-    volumes:
-      - .:/app
+  analysis_app: 
+      build: .
+      container_name: ds_workspace
+      env_file:        
+        - .env  
+      environment:
+        - PYTHONUNBUFFERED=1
+      depends_on:
+        - postgres
+      volumes:
+        - .:/app
+      # Konteynerın kapanmasını engellemek için bu iki satırı ekliyoruz:
+      stdin_open: true # docker run -i
+      tty: true        # docker run -t
+      command: tail -f /dev/null # Konteynerın sürekli açık kalmasını sağlar
 
 volumes:
   postgres_data:
+
+  # Veriyi ilk kez yüklemek için:
+  # docker compose exec analysis_app python ingest_data.py
+
+  
