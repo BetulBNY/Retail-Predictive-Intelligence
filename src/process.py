@@ -3,6 +3,15 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from yellowbrick.cluster import KElbowVisualizer
 from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+import logging
+# Matplotlib'in sadece kritik (CRITICAL) hataları basmasını, bilgi uyarısı vermemesini sağlar
+logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
+
+warnings.filterwarnings("ignore", message=".*font.*")
 
 df = pd.read_csv("data/cleaned_retail_data.csv")
 
@@ -112,15 +121,42 @@ print(rfm_scaled_df.describe().round(2))
 
 # -------------------------------- Optimal K Değerinin Belirlenmesi (Elbow Method) --------------------------------
 
+# 1) ELOBOW METHOD: 
 model = KMeans(random_state=42)
 visualizer = KElbowVisualizer(model, k=(2,10))
 
-visualizer.fit(rfm_scaled) # Senin hazırladığın o scaled veri
+visualizer.fit(rfm_scaled) # SHazırladığım scaled veri
 
 # Docker in görselleri gösterebileceği nbir ekranı olmadığı için görseli kaydettim:
 visualizer.show(outpath="img/elbow_method.png") 
 
 # Görseli incelediğimde Elbow yöntemiyle optimum K sayısının 5 olduğunu gördüm.
+
+# 2)SILHOUETTE SCORE:
+# Sadece Elbow yöntemiyle optimal K değerini belirlemek yeterli olmayabilir, bu yüzden farklı K değerleri için Silhouette skorlarını da hesapladım.
+# Silhouette skoru ise "Noktalar kendi kümesine ne kadar yakın, komşu kümeye ne kadar uzak?" sorusuna cevap verir.
+# Skor Aralığı: -1 ile +1 arasındadır. +1'e yakın: Kümeleme mükemmel, noktalar birbirinden çok ayrı. 0'a yakın: Noktalar kümelerin sınırında, iç içe geçme çok fazla. -1'e yakın: Kümeleme hatalı, noktalar yanlış kümelere atanmış.
+
+for k in range(2, 8): # Farklı K değerleri için Silhouette skorlarını hesaplayalım
+    kms = KMeans(n_clusters=k, random_state=42)
+    labels = kms.fit_predict(rfm_scaled)
+    score = silhouette_score(rfm_scaled, labels)
+    print(f"K={k} için Silhouette Skoru: {score:.4f}")
+
+"""
+K=2 için Silhouette Skoru: 0.4252
+K=3 için Silhouette Skoru: 0.4046
+K=4 için Silhouette Skoru: 0.3940
+K=5 için Silhouette Skoru: 0.3735
+K=6 için Silhouette Skoru: 0.3551
+K=7 için Silhouette Skoru: 0.3418
+
+Matematiksel Olarak En İyisi K=2 değeri çıktı. Küme sayısı arttıkça skor düzenli olarak düşüyor. 
+Matematiksel olarak veri setim en net iki büyük gruba (Örn: Aktifler ve Pasifler) ayrılıyor.
+Ancak iş mantığı açısından K = 5 değerini seçmeyi tercih ediyorum. Çünkü K=5 olduğunda segmentlerin karakteristik
+ özellikleri birbirinden daha net ayrılıyor ve bu da pazarlama stratejileri oluştururken daha anlamlı segmentler oluşturmamı sağlıyor.
+
+"""
 
 # -------------------------------- Base RFM K-Means  --------------------------------
 
@@ -159,5 +195,65 @@ değerlerin olmadığını ve scaling işlemlerimin başarılı çalıştığın
 dengeli dağılmış ve yığılma olmamış.
 
 """
+
+# -------------------------------- SEGMENT NAME MAPPING --------------------------------
+
+# Hangi rakamın hangi isme geleceğini 'segment_analysis' tablosundaki ortalamalara bakarak belirledim.
+seg_map = {
+    0: 'About to Sleep',
+    1: 'Champions',
+    2: 'At Risk',
+    3: 'Hibernating',
+    4: 'Potential Loyalists'
+}
+
+rfm['segment'] = rfm['cluster'].map(seg_map)
+
+print(rfm.head())
+
+# 1. Grafiği Çiz: Recency vs Frequency
+plt.figure(figsize=(10, 8))
+sns.scatterplot(data=rfm, x='recency', y='frequency', hue='segment', palette='viridis', alpha=0.6)
+plt.title('Customer Segments: Recency vs Frequency')
+plt.xlabel('Recency (Days)')
+plt.ylabel('Frequency (Log-Scaled)')
+plt.legend(bbox_to_anchor=(1.05, 1), loc=2)
+plt.savefig('cluster_visualization.png')
+print("Grafik 'cluster_visualization.png' olarak kaydedildi.")
+
+
+# Scatter plot
+# Grafik oluşturma
+plt.figure(figsize=(12, 8))
+
+# Scatter plot: X ekseni Recency, Y ekseni Monetary (Log-scale değerleri daha net ayrım sağlar)
+# Eğer rfm_log kullanıyorsan oradan çizmek kümeleri daha yuvarlak ve ayrık gösterir
+sns.scatterplot(
+    x=rfm['recency'], 
+    y=rfm['monetary'], 
+    hue=rfm['segment'], 
+    palette='bright', 
+    s=60,      # Nokta büyüklüğü
+    alpha=0.7, # Saydamlık
+    edgecolor='w'
+)
+
+plt.title('Müşteri Segmentasyonu (K-Means Clustering)', fontsize=15)
+plt.xlabel('Recency (Gün)', fontsize=12)
+plt.ylabel('Monetary (Toplam Harcama - Log Scale)', fontsize=12)
+plt.legend(title='Segmentler', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.grid(True, linestyle='--', alpha=0.5)
+
+# Grafiği kaydet
+plt.tight_layout()
+plt.savefig('customer_segments_scatter2.png')
+print("Scatter plot 'customer_segments_scatter.png' olarak kaydedildi!")
+
+
+
+
+
+
+
 
 # docker compose exec analysis_app python src/process.py
