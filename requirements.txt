@@ -3,3 +3,10 @@ numpy
 openpyxl
 sqlalchemy
 psycopg2-binary
+scikit-learn
+matplotlib
+seaborn             # Daha iyi görseller ve ısı haritaları (Cohort/RFM) için şart
+xgboost             # "Churn/LTV prediction" için endüstri standardı
+yellowbrick         # Elbow Method ve Silhouette analizini profesyonelce çizdirmek için
+scipy               # İstatistiksel analizler için
+python-dotenv       

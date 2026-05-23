@@ -1,5 +1,8 @@
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import StandardScaler
+from yellowbrick.cluster import KElbowVisualizer
+from sklearn.cluster import KMeans
 
 df = pd.read_csv("data/cleaned_retail_data.csv")
 
@@ -93,17 +96,68 @@ print("Logaritmik dönüşüm sonrası RFM değerlerinin istatistikleri:")
 print(rfm.describe([0.25, 0.5, 0.75, 0.97]).T)
 
 # -------------------------------- Scaling --------------------------------
+# K-Meansx algoritması öklid uzaklık temelli bir algoritma olduğu için, farklı ölçeklerdeki özellikler algoritmanın performansını olumsuz etkileyebilir.
+# Bu nedenle, RFM değerlerini aynı ölçeğe getirmek için Standard Scaling uygulayacağım.
+
+rfm_features = rfm[["recency", "frequency", "monetary"]]
+standardScaler = StandardScaler()
+rfm_scaled = standardScaler.fit_transform(rfm_features)
+
+rfm_scaled_df = pd.DataFrame(rfm_scaled, columns = ["recency", "frequency", "monetary"])
+
+print("Standartlaştırılmış Veri (İlk 5 Satır):")
+print(rfm_scaled_df.head())
+print("\nİstatistikler (Ortalama 0, Std 1 olmalı):")
+print(rfm_scaled_df.describe().round(2))
+
+# -------------------------------- Optimal K Değerinin Belirlenmesi (Elbow Method) --------------------------------
+
+model = KMeans(random_state=42)
+visualizer = KElbowVisualizer(model, k=(2,10))
+
+visualizer.fit(rfm_scaled) # Senin hazırladığın o scaled veri
+
+# Docker in görselleri gösterebileceği nbir ekranı olmadığı için görseli kaydettim:
+visualizer.show(outpath="img/elbow_method.png") 
+
+# Görseli incelediğimde Elbow yöntemiyle optimum K sayısının 5 olduğunu gördüm.
 
 # -------------------------------- Base RFM K-Means  --------------------------------
 
+kmeans = KMeans(n_clusters=5, 
+                init='k-means++',      # başlangıç parametresi varsayılan olarak bu aslında, ama ben yine de belirttim
+                n_init=10,             # 10 farklı rastgele başlangıç noktasıyla 10 ayrı deneme yapar, en iyisini seçer.
+                max_iter=300,          # Her bir denemede merkezleri kaydırma işlemini en fazla 300 adım boyunca sürdürür.
+                tol=0.0001,            # Merkezlerin yer değiştirmeyi ne zaman bırakacağını belirleyen durma eşiğidir. max_iter sınırına ulaşılmasa bile, merkezler bu değerden (0.0001) daha az hareket ediyorsa algoritmayı erken durdurarak zaman kazandırır.
+                random_state=42)
 
+rfm["cluster"] = kmeans.fit_predict(rfm_scaled)  # Scaled veriyi kullandık ama etiketi orijinal rfm tablosuna ekledik
 
+# rfm_scaled: Adaletli mesafe hesabı için sayıları eşitlediğimiz tablo (Eğitim burada yapılır)
+# rfm: Gerçek TL ve gün değerlerinin olduğu, insanların okuyabildiği orijinal tablo (Analiz burada yapılır)
 
+# Her bir kümenin (segmentin) karakterini anlamak için ortalamalarına bakalım
+segment_analysis = rfm.groupby('cluster').agg({
+    'recency': ['mean', 'median'],
+    'frequency': ['mean', 'median'],
+    'monetary': ['mean', 'median', 'count']
+}).round(1)
 
+print(segment_analysis)
+"""
+        recency        frequency        monetary             
+           mean median      mean median     mean median count
+cluster                                                      
+0         103.3   72.0       0.9    0.7      5.7    5.8  1263
+1          43.5   20.0       2.8    2.7      8.6    8.6  1075
+2         402.0  395.0       1.4    1.4      6.9    6.8   852
+3         522.0  515.0       0.8    0.7      5.2    5.3  1067
+4          66.3   44.0       1.8    1.8      7.3    7.2  1621
 
+Bu sonuçlara baktığımda verilerin medyan ve mean değerleri birbirine çok yakın. Bu da kümelemeyi bozacak outlier
+değerlerin olmadığını ve scaling işlemlerimin başarılı çalıştığını gösteriyor. Ayrıca müşteri sayıları da kümelerde 
+dengeli dağılmış ve yığılma olmamış.
 
-
-
-
+"""
 
 # docker compose exec analysis_app python src/process.py
