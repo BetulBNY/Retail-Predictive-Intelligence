@@ -376,5 +376,7 @@ avg_unit_price  -0.021898  0.983631
 # PC2 bileşeni; PC2 ise neredeyse tamamen (0.98 loading ile) 'Average Unit Price' üzerinden tanımlanıyor. Bu şunu gösteriyor: Bir müşterinin pahalı ürün tercih etmesi, onun alışveriş sıklığı veya toplam harcamasından bağımsız bir boyut. Bu yüzden modelim,
 sadece RFM ile görülemeyen 'Premium' alıcıları bu dikey eksende ayrıştırabildi.
 """
-
+# RFM sonrası verileri kaydetme
+rfm_final_analysis.to_csv("data/rfm_with_clusters.csv", index=False)
+print("Segmentasyon sonuçları 'data/rfm_with_clusters.csv' olarak kaydedildi.")
 # docker compose exec analysis_app python src/process.py
