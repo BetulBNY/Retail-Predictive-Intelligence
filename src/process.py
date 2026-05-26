@@ -5,6 +5,7 @@ from sklearn.preprocessing import StandardScaler
 from yellowbrick.cluster import KElbowVisualizer
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
@@ -35,7 +36,10 @@ df["customer_id"] = pd.to_numeric(df["customer_id"], errors="coerce").astype("In
 # RFM, bir müşterinin değerini %80 oranında özetleyen en güçlü 3 sütundur.
 
 # Analyze date for recency calculation
-today = df["invoicedate"].max() + pd.Timedelta(days=1)
+# today = df["invoicedate"].max() + pd.Timedelta(days=1)  # Veri güncellendiğinde (yeni satır eklendiğinde) tüm müşterilerin Recency değeri değişecek.
+# Bu sepeble sabit değer vermeye karar verdim:
+print("Last day:", df["invoicedate"].max()) # Last day: 2011-12-09 12:50:00
+today = pd.Timestamp("2011-12-10")
 
 # RFM table creation
 rfm = df.groupby("customer_id").agg({
@@ -97,6 +101,7 @@ def outlier_thresholds (data_frame,column, q1=0.10, q3=0.90):
 
 def replace_with_thresholds(data_frame, column):
     min_threshold, max_threshold = outlier_thresholds (data_frame, column)
+    min_threshold = max(min_threshold, 0)
     data_frame.loc[(data_frame[column] < min_threshold), column] = min_threshold
     data_frame.loc[(data_frame[column] > max_threshold), column] = max_threshold
     
@@ -121,6 +126,8 @@ for col in ["recency", "frequency", "monetary", "unique_products", "avg_unit_pri
 print("Outlier'lar sınırlandırıldıktan sonra RFM değerlerinin istatistikleri:-----------------------")
 print(rfm_expanded.describe([0.25, 0.5, 0.75, 0.97]).T)
 
+# Analiz yapmak için log almadığım ancak outlierleri baskılanmış halinin kopyasını alıyorum.
+rfm_final_analysis = rfm_expanded.copy() 
 # -------------------------------- Logarithmic Transformation --------------------------------
 # RFM değerlerinden F ve M sağa çarpık dağılım gösteryor. Logaritmik dönüşüm, bu tür dağılımları normalize etmek için kullanıldı.
 rfm_expanded["frequency"] = np.log1p(rfm_expanded["frequency"]) # log(0) hatasından kurtulmak için log yerine log1p kullandım (log(1+x))
@@ -154,7 +161,7 @@ visualizer = KElbowVisualizer(model, k=(2,10))
 visualizer.fit(rfm_scaled_df) # Hazırladığım scaled veri
 
 # Docker in görselleri gösterebileceği bir ekranı olmadığı için görseli kaydettim:
-visualizer.show(outpath="img/elbow_method.png") 
+visualizer.show(outpath="analyze_img/elbow_method.png") 
 
 # Görseli incelediğimde Elbow yöntemiyle optimum K sayısının 5 olduğunu gördüm.
 
@@ -170,18 +177,32 @@ for k in range(2, 8): # Farklı K değerleri için Silhouette skorlarını hesap
     print(f"K={k} için Silhouette Skoru: {score:.4f}")
 
 """
-K=2 için Silhouette Skoru: 0.4252
-K=3 için Silhouette Skoru: 0.4046
-K=4 için Silhouette Skoru: 0.3940
-K=5 için Silhouette Skoru: 0.3735
-K=6 için Silhouette Skoru: 0.3551
-K=7 için Silhouette Skoru: 0.3418
+K=2 için Silhouette Skoru: 0.3350
+K=3 için Silhouette Skoru: 0.2573
+K=4 için Silhouette Skoru: 0.2455
+K=5 için Silhouette Skoru: 0.2427
+K=6 için Silhouette Skoru: 0.2264
+K=7 için Silhouette Skoru: 0.2294
 
 Matematiksel Olarak En İyisi K=2 değeri çıktı. Küme sayısı arttıkça skor düzenli olarak düşüyor. 
 Matematiksel olarak veri setim en net iki büyük gruba (Örn: Aktifler ve Pasifler) ayrılıyor.
 Ancak iş mantığı açısından K = 5 değerini seçmeyi tercih ediyorum. Çünkü K=5 olduğunda segmentlerin karakteristik
 özellikleri birbirinden daha net ayrılıyor ve bu da pazarlama stratejileri oluştururken daha anlamlı segmentler oluşturmamı sağlıyor.
 
+"""
+# K=2'de hangi segmentler birleşiyor?
+kmeans_2 = KMeans(n_clusters=2, random_state=42)
+rfm_final_analysis_test= rfm_final_analysis.copy()
+rfm_final_analysis_test['cluster_2'] = kmeans_2.fit_predict(rfm_scaled_df)
+print(rfm_final_analysis_test.groupby('cluster_2')[['recency','monetary']].median())
+"""
+           recency  monetary
+cluster_2                   
+0             32.0   2247.54
+1            332.0    347.61
+# Bu şunu ifade ediyor: Veriyi en kaba haliyle ikiye böldüğümüzde 
+Cluster 0: Yakın zamanda gelen ve çok harcayanlar
+Cluster 1: Çok uzun zamandır gelmeyen ve az harcayanlar
 """
 
 # -------------------------------- Base RFM K-Means  --------------------------------
@@ -192,139 +213,168 @@ kmeans = KMeans(n_clusters=5,
                 tol=0.0001,            # Merkezlerin yer değiştirmeyi ne zaman bırakacağını belirleyen durma eşiğidir. max_iter sınırına ulaşılmasa bile, merkezler bu değerden (0.0001) daha az hareket ediyorsa algoritmayı erken durdurarak zaman kazandırır.
                 random_state=42)
 
-rfm_expanded["cluster"] = kmeans.fit_predict(rfm_scaled_df)  # Scaled veriyi kullandık ama etiketi orijinal rfm tablosuna ekledik
+rfm_final_analysis["cluster"] = kmeans.fit_predict(rfm_scaled_df)  # Scaled veriyi kullandık ama etiketi orijinal rfm tablosuna (rfm_final_analysis) ekledik
 
-
-
-
-# rfm_scaled: Adaletli mesafe hesabı için sayıları eşitlediğimiz tablo (Eğitim burada yapılır)
-# rfm: Gerçek TL ve gün değerlerinin olduğu, insanların okuyabildiği orijinal tablo (Analiz burada yapılır)
+# rfm_scaled_df: Adaletli mesafe hesabı için sayıları eşitlediğimiz tablo (Eğitim burada yapılır)
+# rfm_final_analysis: Gerçek TL ve gün değerlerinin olduğu, insanların okuyabildiği orijinal tablo (Analiz burada yapılır)
 
 # Her bir kümenin (segmentin) karakterini anlamak için ortalamalarına bakalım
-segment_analysis = rfm_expanded.groupby('cluster').agg({
+segment_analysis = rfm_final_analysis.groupby('cluster').agg({
     'recency': ['mean', 'median'],
     'frequency': ['mean', 'median'],
     'monetary': ['mean', 'median', 'count'],
     'unique_products': ['mean', 'median'],
-    'avg_unit_price': ['mean', 'median']
+    'avg_unit_price': ['mean', 'median'],
+    'customer_id': ['count']
 }).round(1)
 
+print("Segmentlerin Karakteristiği (Baskılanmış Gerçek Değerler):")
 print(segment_analysis)
 """
-        recency        frequency        monetary             
-           mean median      mean median     mean median count
-cluster                                                      
-0         103.3   72.0       0.9    0.7      5.7    5.8  1263
-1          43.5   20.0       2.8    2.7      8.6    8.6  1075
-2         402.0  395.0       1.4    1.4      6.9    6.8   852
-3         522.0  515.0       0.8    0.7      5.2    5.3  1067
-4          66.3   44.0       1.8    1.8      7.3    7.2  1621
+         recency        frequency        monetary               unique_products        avg_unit_price        customer_id
+           mean median      mean median     mean  median count            mean median           mean median       count
+cluster                                                                                                                
+0         328.4  332.0       1.8    1.0    580.4   321.3   647            14.2   12.0            6.5    5.7         647
+1         122.5   66.0       4.5    4.0   1440.1  1198.1  1901            75.8   63.0            3.3    3.1        1901
+2         100.7   66.0       1.8    1.0    421.9   314.7   920            20.7   18.0            2.3    2.3         920
+3          46.0   22.0      15.5   13.0   6046.1  4771.0  1251           195.2  169.0            3.2    2.9        1251
+4         507.9  482.0       1.6    1.0    467.0   305.3  1159            26.8   21.0            2.7    2.7        1159
 
-Bu sonuçlara baktığımda verilerin medyan ve mean değerleri birbirine çok yakın. Bu da kümelemeyi bozacak outlier
-değerlerin olmadığını ve scaling işlemlerimin başarılı çalıştığını gösteriyor. Ayrıca müşteri sayıları da kümelerde 
-dengeli dağılmış ve yığılma olmamış.
-
+# Burada da yine orijinal veri üzerinden segmentlere ayırdım veriyi çünkü sonuçları buna göre yorumalamak gerkiyor. 
 """
 
 # -------------------------------- SEGMENT NAME MAPPING --------------------------------
 
 # Hangi rakamın hangi isme geleceğini 'segment_analysis' tablosundaki ortalamalara bakarak belirledim.
-# Yeni çok boyutlu küme yapısına göre optimize edilmiş segment haritası
-# 5 küme yapısına göre optimize edilmiş en doğru isimlendirme
 # 5 küme yapısına göre (R-F-M-UP-AP) en tutarlı eşleşme:
+
+# 1. Cluster bazlı recency ortalamaları
+res = rfm_final_analysis.groupby('cluster')['recency'].mean().sort_values()
+
+# 2. En düşük recency olan cluster numarası:
+champions_cluster = res.index[0]
+# 3. En yüksek recency olan cluster numarası:
+hibernating_cluster = res.index[-1]
+
+print(f"Otomatik Tespit: Champions = Cluster {champions_cluster}, Hibernating = Cluster {hibernating_cluster}")
+
 seg_map = {
-    3: 'Champions',           # R=46 (En taze), F=2.7, M=8.5 (Zirve)
-    1: 'Loyal Customers',     # R=122, F=1.6, M=7.1 (Sadık ve düzenli)
-    2: 'About to Sleep',      # R=100 (Taze) ama F=1.0, M=5.7 (Harcaması çok düşük)
-    0: 'At Risk',             # R=328 (1 yıldır yok) ama Avg_Unit_Price=2.0 (Pahalı ürün almış!)
-    4: 'Hibernating'          # R=507 (Kayıp), Tüm metrikler en düşük
+    0: 'Champions',           # R=45.5 (En taze), F=15.5, M=6046 (Zirve grup)
+    4: 'Loyal Customers',     # R=122.2, F=4.5, M=1439 (Düzenli kitle)
+    1: 'About to Sleep',      # R=100.3, F=1.8, M=421 (Taze ama harcaması düşük)
+    2: 'At Risk',             # R=326.5 (1 yıldır yok) ama Avg_Unit_Price=6.5 (Değerli ama riskli)
+    3: 'Hibernating'          # R=507.5 (En eski), F=1.6, M=466 (Kayıp kitle)
 }
 
-rfm_expanded['segment'] = rfm_expanded['cluster'].map(seg_map)
+rfm_final_analysis['segment'] = rfm_final_analysis['cluster'].map(seg_map)
 
-# Doğrulamak için örnekleri gör
-print(rfm_expanded[['customer_id', 'segment', 'recency', 'monetary']].head())
+# Mapping doğrulama: Her segmentin median recency'sine bak
+print("Mapping Doğrulama:")
+print(rfm_final_analysis.groupby('segment')['recency'].median().sort_values())
+# Champions en düşük recency'e sahip olmalı
 
+print("Segmentlere ayrıldıktan sonraki hali:\n")
+print(rfm_final_analysis[['customer_id', 'segment', 'recency', 'frequency', 'monetary']].head(10))
 
+# -------------------------------- DATA VISUALIZATION --------------------------------
 
+# 1) SCATTER PLOT
+# X ekseninde gerçek dünya recency değerleri, y ekseninde ise verinin çarpıklığını korumak için Log Transform edilmiş monetary değerleri kullanıldı.
+# Standard Scaled hali değil Log Transform halini seçmemin sebebi ilki daha çok DS'cilerin kümelerin matematiksel olarak ne kadar iyi
+# ayrıldığını kontrol etmek için. Log Transform ise görsel olarak daha anlamlı sayılar sunar. 
 
-# Scatter plot
-# Grafik oluşturma
+# 1. Çizim için özel bir tablo oluşturma
+plot_df = rfm_final_analysis.copy()
+# 2. X ekseni için gerçek günler (Zaten rfm_final_analysis'te var)
+# 3. Y ekseni için Scaled değil, sadece LOG alınmış halini kullandım (Daha anlaşılır olur)
+# (rfm_expanded içinde loglanmış halleri vardı.)
+plot_df['monetary_log'] = np.log1p(rfm_final_analysis['monetary'])
+
 plt.figure(figsize=(12, 8))
 
-# Scatter plot: X ekseni Recency, Y ekseni Monetary (Log-scale değerleri daha net ayrım sağlar)
-# Eğer rfm_log kullanıyorsan oradan çizmek kümeleri daha yuvarlak ve ayrık gösterir
-sns.scatterplot(
-    x=rfm_expanded['recency'], 
-    y=rfm_expanded['monetary'], 
-    hue=rfm_expanded['segment'], 
+sns.scatterplot( # Scatter plot: X ekseni Recency, Y ekseni Monetary (Log-scale değerleri daha net ayrım sağlar)
+    data=plot_df,      # Tek bir kaynak
+    x='recency', 
+    y='monetary_log',  # Log scale ama -3/+3 değil, 2-10 arası değerler
+    hue='segment', 
     palette='bright', 
-    s=60,      # Nokta büyüklüğü
-    alpha=0.7, # Saydamlık
+    s=60,             # Nokta büyüklüğü
+    alpha=0.7,        # Saydamlık
     edgecolor='w'
 )
 
-plt.title('Müşteri Segmentasyonu (K-Means Clustering)', fontsize=15)
-plt.xlabel('Recency (Gün)', fontsize=12)
-plt.ylabel('Monetary (Toplam Harcama - Log Scale)', fontsize=12)
-plt.legend(title='Segmentler', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.title('Müşteri Segmentasyonu (Recency vs Log-Monetary)', fontsize=15)
+plt.xlabel('Recency (Gün Sayısı)', fontsize=12)
+plt.ylabel('Monetary (Harcama - Logaritmik Ölçek)', fontsize=12)
 plt.grid(True, linestyle='--', alpha=0.5)
 
 # Grafiği kaydet
 plt.tight_layout()
-plt.savefig('customer_segments_scatter.png')
-print("Scatter plot 'customer_segments_scatter.png' olarak kaydedildi!")
+plt.savefig('analyze_img/customer_segments_final.png')       
+print("Scatter plot 'customer_segments_final.png' olarak kaydedildi!")
 
-
-
-
-from sklearn.decomposition import PCA
+# 2) PCA CUSTOMER SEGMENTS
+# Şu anki verim 5 boyutlu (Recency, Frequency, Monetary, Avg Unit Price, Unique Products).
+# Biz insanlar 5 boyutu hayal edemeyiz ve çizemeyiz. PCA ise Bu 5 boyutu, aralarındaki ilişkiyi bozmadan en fazla 
+# bilgiyi (varyansı) temsil eden 2 tane yapay eksene (PC1 ve PC2) indirger. 
+# Burada ise sadece scaled veriyi kullandım çünkü PCA "Varyans" (Değişkenlik) maksimizasyonu üzerine çalışır.
+# Eğer standartlaştırmazsam PCA, 10.000'lik devasa sayıların olduğu Monetary sütununu "en önemli bilgi kaynağı"
+# sanar ve diğer tüm sütunları (Frequency, Recency vb.) yok sayar.
+# Yani scale etmezsem PCA sadece harcanan parayı çizer, diğer 4 özelliği çöpe atar. Scale ettiğimde ise tüm
+# özellikler -2 ile +2 arasına gelir ve PCA her özelliğe "eşit hak" tanıyarak hepsinden birer parça bilgi alır.
 
 pca = PCA(n_components=2)
-
-pca_components = pca.fit_transform(rfm_scaled)
+pca_components = pca.fit_transform(rfm_scaled_df)
 
 pca_df = pd.DataFrame(
     pca_components,
     columns=["PC1", "PC2"]
 )
 
-pca_df["segment"] = rfm_expanded["segment"]
+pca_df["segment"] = rfm_final_analysis["segment"]
 
 plt.figure(figsize=(10,8))
-
 sns.scatterplot(
     data=pca_df,
-    x="PC1",
-    y="PC2",
+    x="PC1",  # Genellikle verideki en büyük farkı oluşturan bileşendir. Benim verimde muhtmeleen "monetary + frequency"
+    y="PC2",  # PC1'in açıklayamadığı ikinci en büyük farkı (belki de sadece Recency veya Avg Unit Price)
     hue="segment",
     palette="bright",
     alpha=0.7
 )
-
 plt.title("PCA Projection of Customer Segments")
-plt.show()
 
 # Grafiği kaydet
 plt.tight_layout()
-plt.savefig('pca_customer_segments2.png')
+plt.savefig('analyze_img/pca_customer_segments.png')
 print("Scatter plot 'pca_customer_segments.png' olarak kaydedildi!")
 
+# PCA GRAFİĞİ VERİYİ NE KADAR DOĞRU TEMSİL EDİYOR KONTROLÜ:
+print("Açıklanan Varyans Oranları:", pca.explained_variance_ratio_)
+# OUTPUT : [0.57894881 0.20334714] 
+# Yani benim çizdiğim bu 2 boyutlu grafik, orijinal 5 boyutlu verideki toplam bilginin %77'sini temsil ediyor.
+# %23'luk bir bilgi kaybım var.
 
-
-
-
-print(pca.explained_variance_ratio_)
-
-
+# PCA GRAFİĞİNİN LOADINGS TABLOSU:
+# Loadings tablosu, her bileşenin (PC1 ve PC2) içinde hangi malzemeden (R, F, M, UP, AUP) ne kadar olduğunu gösterir.
 loadings = pd.DataFrame(
     pca.components_.T,
     columns=["PC1", "PC2"],
     index=rfm_features.columns
 )
+print("Loadings tablosu sonuçları:\n",loadings)
+"""
+Loadings tablosu sonuçları:
+                       PC1       PC2
+recency         -0.403007  0.119693
+frequency        0.536497  0.068139
+monetary         0.542618  0.105837
+unique_products  0.504819 -0.047957
+avg_unit_price  -0.021898  0.983631
 
-print(loadings)
-
-
+# PC1 bileşeni; Eğer bir müşterinin PC1 skoru yüksekse; o müşteri çok para bırakmış (Monetary), çok sık gelmiş (Frequency), çok çeşit ürün almış (Unique_products) ve en son gelişi üzerinden çok az zaman geçmiş (Recency - negatif olduğu için ters orantılı).
+# PC2 bileşeni; PC2 ise neredeyse tamamen (0.98 loading ile) 'Average Unit Price' üzerinden tanımlanıyor. Bu şunu gösteriyor: Bir müşterinin pahalı ürün tercih etmesi, onun alışveriş sıklığı veya toplam harcamasından bağımsız bir boyut. Bu yüzden modelim,
+sadece RFM ile görülemeyen 'Premium' alıcıları bu dikey eksende ayrıştırabildi.
+"""
 
 # docker compose exec analysis_app python src/process.py
