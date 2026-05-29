@@ -26,6 +26,7 @@ print("\nVeri setindeki benzersiz değer sayısı:-----------------------")
 print(df.nunique())
 print("Base df description:-----------------------")
 print(df.describe([0.25, 0.5, 0.75, 0.97]).T)
+
 # -------------------------------- Data Preprocessing --------------------------------
 # Transforming datatypes
 df["invoicedate"] = pd.to_datetime(df["invoicedate"])
@@ -39,7 +40,7 @@ df["customer_id"] = pd.to_numeric(df["customer_id"], errors="coerce").astype("In
 # today = df["invoicedate"].max() + pd.Timedelta(days=1)  # Veri güncellendiğinde (yeni satır eklendiğinde) tüm müşterilerin Recency değeri değişecek.
 # Bu sepeble sabit değer vermeye karar verdim:
 print("Last day:", df["invoicedate"].max()) # Last day: 2011-12-09 12:50:00
-today = pd.Timestamp("2011-12-10")
+today = pd.Timestamp("2011-12-10") # Last day + 1
 
 # RFM table creation
 rfm = df.groupby("customer_id").agg({
@@ -75,11 +76,20 @@ monetary     5878.0   2869.961142  14002.181211     2.95  330.6825   835.97  218
 # Yeni özellikleri ana tablodan (df) çekip RFM tablosuna ekleme:
 new_features = df.groupby("customer_id").agg(
     avg_unit_price = ("price", "mean"),
-    unique_products = ("stockcode", "nunique")
+    unique_products = ("stockcode", "nunique"),
+    first_purchase = ("invoicedate", "min"),
+    last_purchase = ("invoicedate", "max"),
+    is_UK = ("country", lambda x: (x == "United Kingdom").iloc[0].astype(int)) # IS UK Feature: # Because this dataset mosstly includes UK customers.
 )
 
 # RFM tablosuyla birleştir
 rfm_expanded = rfm.merge(new_features, on="customer_id")
+
+# FEATURE 2) AVERAGE SPEND PER ORDER
+rfm_expanded["avg_order_value"] =  rfm_expanded["monetary"] / rfm_expanded["frequency"] # it is different then avg_unit_price (we divided total price whole rows per person for avg_unit_price)
+
+# FEATURE 3) ACTIVE LIFESPAN
+rfm_expanded['active_lifespan'] = (rfm_expanded['last_purchase'] - rfm_expanded['first_purchase']).dt.days
 
 # (Yeni eklediğim özelliklere de Outlier handling, Log ve Scaling yapacağım)
 
@@ -112,7 +122,7 @@ def check_outlier(data_frame, column):
     else:
         return False
     
-for col in ["recency", "frequency", "monetary", "unique_products", "avg_unit_price"]: 
+for col in ["recency", "frequency", "monetary", "unique_products", "avg_unit_price", "active_lifespan"]: 
     if check_outlier(rfm_expanded, col):
         print(f"{col} için outlier var. Threshold'lar uygulanıyor...")
         # outlier olanları bulma:
@@ -128,12 +138,15 @@ print(rfm_expanded.describe([0.25, 0.5, 0.75, 0.97]).T)
 
 # Analiz yapmak için log almadığım ancak outlierleri baskılanmış halinin kopyasını alıyorum.
 rfm_final_analysis = rfm_expanded.copy() 
+
 # -------------------------------- Logarithmic Transformation --------------------------------
 # RFM değerlerinden F ve M sağa çarpık dağılım gösteryor. Logaritmik dönüşüm, bu tür dağılımları normalize etmek için kullanıldı.
 rfm_expanded["frequency"] = np.log1p(rfm_expanded["frequency"]) # log(0) hatasından kurtulmak için log yerine log1p kullandım (log(1+x))
 rfm_expanded["monetary"] = np.log1p(rfm_expanded["monetary"]) 
 rfm_expanded["unique_products"] = np.log1p(rfm_expanded["unique_products"]) 
 rfm_expanded["avg_unit_price"] = np.log1p(rfm_expanded["avg_unit_price"])
+rfm_expanded["active_lifespan"] = np.log1p(rfm_expanded["active_lifespan"])
+
 
 print("Logaritmik dönüşüm sonrası RFM değerlerinin ve yeni featurelerin istatistikleri:-----------------------")
 print(rfm_expanded.describe([0.25, 0.5, 0.75, 0.97]).T)
@@ -142,11 +155,11 @@ print(rfm_expanded.describe([0.25, 0.5, 0.75, 0.97]).T)
 # K-Meansx algoritması öklid uzaklık temelli bir algoritma olduğu için, farklı ölçeklerdeki özellikler algoritmanın performansını olumsuz etkileyebilir.
 # Bu nedenle, RFM değerlerini aynı ölçeğe getirmek için Standard Scaling uygulayacağım.
 
-rfm_features = rfm_expanded[["recency", "frequency", "monetary", "unique_products", "avg_unit_price"]]
+rfm_features = rfm_expanded[["recency", "frequency", "monetary", "unique_products", "avg_unit_price", "active_lifespan"]]
 standardScaler = StandardScaler()
 rfm_scaled = standardScaler.fit_transform(rfm_features)
 
-rfm_scaled_df = pd.DataFrame(rfm_scaled, columns = ["recency", "frequency", "monetary", "unique_products", "avg_unit_price"])
+rfm_scaled_df = pd.DataFrame(rfm_scaled, columns = ["recency", "frequency", "monetary", "unique_products", "avg_unit_price", "active_lifespan"])
 
 print("Standartlaştırılmış Veri (İlk 5 Satır):-----------------------")
 print(rfm_scaled_df.head())
@@ -161,7 +174,7 @@ visualizer = KElbowVisualizer(model, k=(2,10))
 visualizer.fit(rfm_scaled_df) # Hazırladığım scaled veri
 
 # Docker in görselleri gösterebileceği bir ekranı olmadığı için görseli kaydettim:
-visualizer.show(outpath="analyze_img/elbow_method.png") 
+visualizer.show(outpath="analyze_img/elbow_method2.png") 
 
 # Görseli incelediğimde Elbow yöntemiyle optimum K sayısının 5 olduğunu gördüm.
 
@@ -177,12 +190,12 @@ for k in range(2, 8): # Farklı K değerleri için Silhouette skorlarını hesap
     print(f"K={k} için Silhouette Skoru: {score:.4f}")
 
 """
-K=2 için Silhouette Skoru: 0.3350
-K=3 için Silhouette Skoru: 0.2573
-K=4 için Silhouette Skoru: 0.2455
-K=5 için Silhouette Skoru: 0.2427
-K=6 için Silhouette Skoru: 0.2264
-K=7 için Silhouette Skoru: 0.2294
+K=2 için Silhouette Skoru: 0.3727
+K=3 için Silhouette Skoru: 0.2800
+K=4 için Silhouette Skoru: 0.2601
+K=5 için Silhouette Skoru: 0.2434
+K=6 için Silhouette Skoru: 0.2470
+K=7 için Silhouette Skoru: 0.2574
 
 Matematiksel Olarak En İyisi K=2 değeri çıktı. Küme sayısı arttıkça skor düzenli olarak düşüyor. 
 Matematiksel olarak veri setim en net iki büyük gruba (Örn: Aktifler ve Pasifler) ayrılıyor.
@@ -198,11 +211,11 @@ print(rfm_final_analysis_test.groupby('cluster_2')[['recency','monetary']].media
 """
            recency  monetary
 cluster_2                   
-0             32.0   2247.54
-1            332.0    347.61
+0            383.0   295.505
+1             40.0  1774.390
 # Bu şunu ifade ediyor: Veriyi en kaba haliyle ikiye böldüğümüzde 
-Cluster 0: Yakın zamanda gelen ve çok harcayanlar
-Cluster 1: Çok uzun zamandır gelmeyen ve az harcayanlar
+Cluster 1: Yakın zamanda gelen ve çok harcayanlar
+Cluster 0: Çok uzun zamandır gelmeyen ve az harcayanlar
 """
 
 # -------------------------------- Base RFM K-Means  --------------------------------
@@ -231,14 +244,14 @@ segment_analysis = rfm_final_analysis.groupby('cluster').agg({
 print("Segmentlerin Karakteristiği (Baskılanmış Gerçek Değerler):")
 print(segment_analysis)
 """
-         recency        frequency        monetary               unique_products        avg_unit_price        customer_id
+        recency        frequency        monetary               unique_products        avg_unit_price        customer_id
            mean median      mean median     mean  median count            mean median           mean median       count
 cluster                                                                                                                
-0         328.4  332.0       1.8    1.0    580.4   321.3   647            14.2   12.0            6.5    5.7         647
-1         122.5   66.0       4.5    4.0   1440.1  1198.1  1901            75.8   63.0            3.3    3.1        1901
-2         100.7   66.0       1.8    1.0    421.9   314.7   920            20.7   18.0            2.3    2.3         920
-3          46.0   22.0      15.5   13.0   6046.1  4771.0  1251           195.2  169.0            3.2    2.9        1251
-4         507.9  482.0       1.6    1.0    467.0   305.3  1159            26.8   21.0            2.7    2.7        1159
+0         370.0  386.0       1.5    1.0    495.8   292.9   535            13.0   10.0            6.7    6.0         535
+1         157.1   88.0       3.9    3.0   1127.7   928.4  2251            57.5   48.0            3.2    3.0        2251
+2         103.7   70.0       1.2    1.0    369.9   244.6   662            21.5   16.0            2.5    2.4         662
+3         523.3  512.0       1.3    1.0    392.8   246.8   929            23.5   18.0            2.6    2.6         929
+4          50.0   23.0      14.0   11.0   5458.3  4127.9  1501           183.3  156.0            3.2    3.0        1501
 
 # Burada da yine orijinal veri üzerinden segmentlere ayırdım veriyi çünkü sonuçları buna göre yorumalamak gerkiyor. 
 """
@@ -259,11 +272,11 @@ hibernating_cluster = res.index[-1]
 print(f"Otomatik Tespit: Champions = Cluster {champions_cluster}, Hibernating = Cluster {hibernating_cluster}")
 
 seg_map = {
-    0: 'Champions',           # R=45.5 (En taze), F=15.5, M=6046 (Zirve grup)
-    4: 'Loyal Customers',     # R=122.2, F=4.5, M=1439 (Düzenli kitle)
-    1: 'About to Sleep',      # R=100.3, F=1.8, M=421 (Taze ama harcaması düşük)
-    2: 'At Risk',             # R=326.5 (1 yıldır yok) ama Avg_Unit_Price=6.5 (Değerli ama riskli)
-    3: 'Hibernating'          # R=507.5 (En eski), F=1.6, M=466 (Kayıp kitle)
+    4: 'Champions',           # En taze (50 gün), en çok harcayan
+    1: 'Loyal Customers',     # Sadık kitle (157 gün, 1127 harcama)
+    2: 'About to Sleep',      # Taze ama harcaması ve sıklığı çok düşük (103 gün)
+    0: 'At Risk',             # Çok uzun süredir yok (370 gün) ama pahalı ürün alıcısı (AUP=6.7)
+    3: 'Hibernating'          # Tamamen ölü kitle (523 gün) 
 }
 
 rfm_final_analysis['segment'] = rfm_final_analysis['cluster'].map(seg_map)
@@ -310,7 +323,7 @@ plt.grid(True, linestyle='--', alpha=0.5)
 
 # Grafiği kaydet
 plt.tight_layout()
-plt.savefig('analyze_img/customer_segments_final.png')       
+plt.savefig('analyze_img/customer_segments_final2.png')       
 print("Scatter plot 'customer_segments_final.png' olarak kaydedildi!")
 
 # 2) PCA CUSTOMER SEGMENTS
@@ -346,12 +359,12 @@ plt.title("PCA Projection of Customer Segments")
 
 # Grafiği kaydet
 plt.tight_layout()
-plt.savefig('analyze_img/pca_customer_segments.png')
+plt.savefig('analyze_img/pca_customer_segments2.png')
 print("Scatter plot 'pca_customer_segments.png' olarak kaydedildi!")
 
 # PCA GRAFİĞİ VERİYİ NE KADAR DOĞRU TEMSİL EDİYOR KONTROLÜ:
 print("Açıklanan Varyans Oranları:", pca.explained_variance_ratio_)
-# OUTPUT : [0.57894881 0.20334714] 
+# OUTPUT : [0.59646389 0.16966971]
 # Yani benim çizdiğim bu 2 boyutlu grafik, orijinal 5 boyutlu verideki toplam bilginin %77'sini temsil ediyor.
 # %23'luk bir bilgi kaybım var.
 
@@ -366,17 +379,18 @@ print("Loadings tablosu sonuçları:\n",loadings)
 """
 Loadings tablosu sonuçları:
                        PC1       PC2
-recency         -0.403007  0.119693
-frequency        0.536497  0.068139
-monetary         0.542618  0.105837
-unique_products  0.504819 -0.047957
-avg_unit_price  -0.021898  0.983631
+recency         -0.357972  0.129373
+frequency        0.485775  0.056945
+monetary         0.480992  0.090911
+unique_products  0.441103 -0.064039
+avg_unit_price  -0.013972  0.983001
+active_lifespan  0.457993  0.036909
 
 # PC1 bileşeni; Eğer bir müşterinin PC1 skoru yüksekse; o müşteri çok para bırakmış (Monetary), çok sık gelmiş (Frequency), çok çeşit ürün almış (Unique_products) ve en son gelişi üzerinden çok az zaman geçmiş (Recency - negatif olduğu için ters orantılı).
 # PC2 bileşeni; PC2 ise neredeyse tamamen (0.98 loading ile) 'Average Unit Price' üzerinden tanımlanıyor. Bu şunu gösteriyor: Bir müşterinin pahalı ürün tercih etmesi, onun alışveriş sıklığı veya toplam harcamasından bağımsız bir boyut. Bu yüzden modelim,
 sadece RFM ile görülemeyen 'Premium' alıcıları bu dikey eksende ayrıştırabildi.
 """
 # RFM sonrası verileri kaydetme
-rfm_final_analysis.to_csv("data/rfm_with_clusters.csv", index=False)
-print("Segmentasyon sonuçları 'data/rfm_with_clusters.csv' olarak kaydedildi.")
+rfm_final_analysis.to_csv("data/rfm_with_clusters2.csv", index=False)
+print("Segmentasyon sonuçları 'data/rfm_with_clusters2.csv' olarak kaydedildi.")
 # docker compose exec analysis_app python src/process.py
