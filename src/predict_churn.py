@@ -8,9 +8,7 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 from sklearn.model_selection import RandomizedSearchCV
 from config import CHURN_RECENCY_THRESHOLD
 
-df_rfm_segments  = pd.read_csv("data/rfm_with_clusters2.csv")
 df_rtail = pd.read_csv("data/cleaned_retail_data.csv") # Original Data
-print("df_model:",df_rfm_segments .info())
 print("df_rtail:",df_rtail.info())
 
 df_rtail['invoicedate'] = pd.to_datetime(df_rtail['invoicedate']) # Becasue it i scsv format I'm converting it to datetime format.
@@ -51,6 +49,7 @@ y_df['churn'] = y_df['customer_id'].apply(lambda x : 0 if x in customers_after_c
 # 5) Calculating Features for the model using past data (df_past)
 # I will calculate the features using the past data (df_past) to avoid data leakage
 X_df = df_past.groupby('customer_id').agg(
+   recency_at_cutoff = ('invoicedate', lambda x: (cut_off_date - x.max()).days), # Recency is calculated as the number of days between the cut-off date and the last purchase date.
    frequency = ('invoice', 'nunique'),
    monetary = ('total_revenue', 'sum'),
    avg_unit_price = ('price', 'mean'),
@@ -60,6 +59,16 @@ X_df = df_past.groupby('customer_id').agg(
 ).reset_index()
 
 X_df['avg_order_value'] = X_df['monetary'] / X_df['frequency'] # Average spending per order (monetary / frequency)
+
+# Purchase Trend (Son 90 gündeki sıklığın genele oranı)
+recent_window = cut_off_date - pd.Timedelta(days=90)
+freq_recent = df_past[df_past['invoicedate'] >= recent_window].groupby('customer_id')['invoice'].nunique()
+
+X_df = X_df.merge(freq_recent.rename('freq_last_90d'), on='customer_id', how='left')
+X_df['freq_last_90d'] = X_df['freq_last_90d'].fillna(0) # Filling NaN with 0 for customers who had no purchases in the last 90 days.
+X_df['purchase_momentum'] = X_df['freq_last_90d'] / X_df['frequency']
+
+X_df['avg_order_value'] = X_df['monetary'] / X_df['frequency']
 
 # 6) Merging the features and the target variable into a single DataFrame
 df_model = pd.merge(X_df, y_df, on='customer_id', how='inner')
@@ -81,11 +90,19 @@ print(df_model.columns) # ['customer_id', 'frequency', 'monetary', 'avg_unit_pri
 # For X, I eliminited customer_id, recency because it causes leakage, cluster and segment arised from recency.
 
 # Improved Model
-X = df_model[['frequency', 'monetary', 'avg_unit_price', 'unique_products', 'is_UK', 'avg_order_value', 'active_lifespan']]
+X = df_model[['recency_at_cutoff', 'frequency', 'monetary', 'avg_unit_price', 'unique_products', 'is_UK', 'avg_order_value', 'active_lifespan', 'purchase_momentum']]
 y = df_model['churn']
 
 # Train- test split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y) 
+
+print(type(X_train))
+print(X_train.shape)
+print(X_train.dtypes)
+
+for col in X_train.columns:
+    if isinstance(X_train[col], pd.DataFrame):
+        print("Problemli kolon:", col)
 
 # scale_pos_weight (Giving more penalties on the minority class.) # 581 / 469 = 1.24 (Azınlıkta olan sınıfa ağırlık verme)
 neg_count = (y_train == 0).sum()  # Majority class (churn=0)
@@ -99,7 +116,7 @@ param_grid = {
     'n_estimators': [100, 150, 200, 300, 500],
     'subsample': [0.7, 0.8, 0.9],
     'colsample_bytree': [0.7, 0.8, 0.9],
-   'scale_pos_weight': [base_ratio * m for m in [0.5, 0.75, 1.0]] 
+   #'scale_pos_weight': [base_ratio * m for m in [0.5, 0.75, 1.0]] 
 }
 
 xgb_search = RandomizedSearchCV(XGBClassifier(eval_metric='logloss'), 
@@ -119,49 +136,27 @@ print("En iyi parametreler:", xgb_search.best_params_)
 
 # -------------------------------- RESULTS --------------------------------
 
-# NEW VERSION 1: Threshold Optimization 
-# Instead of using the default 0.5 probability threshold, I search for the optimal cutoff that balances precision and recall.
-# The goal is to maximize recall while keeping precision above 0.85, which is critical for churn prediction (minimizing missed churners).
-
 y_probs = best_model.predict_proba(X_test)[:, 1]
+y_pred = (y_probs >= 0.50).astype(int)
 
-# Threshold Optimizasyonu
-# Default 0.5 yerine, Recall'ı maximize eden threshold'u buluyoruz.
-# Churn'de yanlış negatif (kaçırılan müşteri) >> yanlış pozitif (gereksiz kampanya)
-precision_arr, recall_arr, thresholds = precision_recall_curve(y_test, y_probs)
-
-# Minimum %85 precision şartıyla en yüksek recall'ı veren threshold
-valid_mask = precision_arr[:-1] >= 0.70
-if valid_mask.any():
-    best_threshold = thresholds[valid_mask][np.argmax(recall_arr[:-1][valid_mask])]
-else:
-    best_threshold = 0.5  # Fallback
-
-print(f"Optimal Threshold: {best_threshold:.2f}")
-
-y_pred = (y_probs >= best_threshold).astype(int)
+print("\n--- BALANCED MODEL RESULTS ---")
 print(classification_report(y_test, y_pred))
-
-
-# OLD VERSION: Default 0.5 threshold
-# y_pred = best_model.predict(X_test) # Default 0.5 threshold
-# print(classification_report(y_test, y_pred))
 
 """
               precision    recall  f1-score   support
 
-           0       0.80      0.48      0.60       469
-           1       0.68      0.91      0.78       581
+           0       0.77      0.66      0.71       469
+           1       0.75      0.84      0.79       581
 
-    accuracy                           0.72      1050
-   macro avg       0.74      0.69      0.69      1050
-weighted avg       0.74      0.72      0.70      1050
+    accuracy                           0.76      1050
+   macro avg       0.76      0.75      0.75      1050
+weighted avg       0.76      0.76      0.76      1050
 """
-# In churn prediction, I aimed to maximize Recall (0.91) because we are able to capture 91% of customers who are likely to churn in advance.
-# Yes, Precision came out as 0.68; meaning that out of every 100 customers we predict as "will churn," 32 actually would not churn (False Positives).
+# In churn prediction, I aimed to maximize Recall (0.84) because we are able to capture 84% of customers who are likely to churn in advance.
+# Yes, Precision came out as 0.75; meaning that out of every 100 customers we predict as "will churn," 25 actually would not churn (False Positives).
 # However, for an e-commerce company, losing a loyal customer completely is much more costly than mistakenly offering a discount coupon to someone who would not churn.
 
-# The feature that contributed most to improving my score was 'active_lifespan'. The other features, 'is_UK' and 'avg_order_value', did not cause any change in my Recall score.
+# The feature that contributed most to improving my score was 'recency_at_cutoff ', 'purchase_momentum ', 'active_lifespan'. The other features, 'is_UK' and 'avg_order_value', did not cause any change in my Recall score.
 
 
 # -------------------------------- EVALUATION METRICS --------------------------------
@@ -205,10 +200,5 @@ plt.title('Churn Tahmininde En Etkili Özellikler')
 plt.savefig('analyze_img/feature_importance_churn.png')
 print("\nÖzellik Önem Sıralaması:")
 print(importances)
-
-
-
-
-
 
 # docker compose exec analysis_app python src/predict_churn.py

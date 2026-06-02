@@ -18,6 +18,7 @@ warnings.filterwarnings("ignore", message=".*font.*")
 df = pd.read_csv("data/cleaned_retail_data.csv")
 
 # -------------------------------- EDA --------------------------------
+
 print("Veri setinin ilk 5 satırı:-----------------------")
 print(df.head())
 print("\nVeri setinin genel bilgisi:-----------------------")
@@ -67,9 +68,6 @@ monetary     5878.0   2869.961142  14002.181211     2.95  330.6825   835.97  218
 
 """
 # -------------------------------- Feature Engineering --------------------------------
-# Customer segments scatter plot'u inceledikten sonra segmentlerin birbirinden ayrıldığını ancak daha net bir ayrım 
-# için bazı ekstra featurelerin eklenmesinin faydalı olabileceğini düşündüm. Bu şekilde kümeleri birbirinden uzaklaştırmış olacağım.
-
 # 1) Average Unit Price (AUP): Müşteri genelde ucuz ürünler mi alıyor yoksa lüks/pahalı ürünler mi? (Monetary'den farklı)
 # 2) Product Diversity (Ürün Çeşitliliği): Toplam kaç farklı StockCode satın almış? (Niche bir alıcı mı yoksa her şeyi alan bir genel alıcı mı?).
 
@@ -146,7 +144,6 @@ rfm_expanded["monetary"] = np.log1p(rfm_expanded["monetary"])
 rfm_expanded["unique_products"] = np.log1p(rfm_expanded["unique_products"]) 
 rfm_expanded["avg_unit_price"] = np.log1p(rfm_expanded["avg_unit_price"])
 rfm_expanded["active_lifespan"] = np.log1p(rfm_expanded["active_lifespan"])
-
 
 print("Logaritmik dönüşüm sonrası RFM değerlerinin ve yeni featurelerin istatistikleri:-----------------------")
 print(rfm_expanded.describe([0.25, 0.5, 0.75, 0.97]).T)
