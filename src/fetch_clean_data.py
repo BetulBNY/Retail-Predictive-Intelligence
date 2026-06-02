@@ -19,12 +19,18 @@ print("Veriler PostgreSQL'den çekiliyor...")
 query = "SELECT * FROM cleaned_retail_data"
 df = pd.read_sql(query, engine)
 
+df['invoicedate'] = pd.to_datetime(df['invoicedate']) # PostgreSQL'de normalde çevirmiştim ancak Pandas çekince tekrar object olarak gelmişti.
+df['customer_id'] = df['customer_id'].astype('Int64')
+
 print(f"Başarılı! {df.shape[0]} satır ve {df.shape[1]} sütun veri yüklendi.")
 
 # 4. İlk Kontrol
 print(df.head())
 
-# 5. data klasörünün içine temizlenmiş veriyi kaydetme
-df.to_csv("data/cleaned_retail_data.csv", index=False)
+# 5. Data Types Kontrolü
+print(df.dtypes)
 
-# docker compose exec analysis_app python fetch_clean_data.py
+# 6. data klasörünün içine temizlenmiş veriyi kaydetme
+# df.to_csv("data/cleaned_retail_data.csv", index=False)
+df.to_parquet("data/cleaned_retail_data.parquet")
+# docker compose exec analysis_app python src/fetch_clean_data.py

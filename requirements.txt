@@ -10,3 +10,5 @@ xgboost             # "Churn/LTV prediction" için endüstri standardı
 yellowbrick         # Elbow Method ve Silhouette analizini profesyonelce çizdirmek için
 scipy               # İstatistiksel analizler için
 python-dotenv       
+pyarrow              # Parquet formatında veri kaydetmek ve okumak için
+fastparquet          # Parquet formatında veri kaydetmek ve okumak için alternatif
