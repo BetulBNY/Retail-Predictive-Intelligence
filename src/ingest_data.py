@@ -16,7 +16,6 @@ def ingest():
     print(f"Toplam {len(df)} satır veri okundu.")
 
     # 2. DB Bağlantısı (Docker içi network adresini kullanıyoruz)
-    
     user = os.getenv('POSTGRES_USER')
     password = os.getenv('POSTGRES_PASSWORD')
     db = os.getenv('POSTGRES_DB')
