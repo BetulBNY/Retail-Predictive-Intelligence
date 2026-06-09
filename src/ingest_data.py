@@ -8,7 +8,7 @@ def ingest():
     
     # 1. Veriyi Oku (Hangi sheetler varsa isimlerini kontrol et)
     print("Excel dosyası okunuyor, bu işlem biraz zaman alabilir...")
-    # Not: Sayfa isimleri tam olarak 'Year 2009-2010' olmayabilir, kontrol et.
+
     df1 = pd.read_excel(file_path, sheet_name=0) 
     df2 = pd.read_excel(file_path, sheet_name=1)
     df = pd.concat([df1, df2], ignore_index=True)
@@ -20,8 +20,10 @@ def ingest():
     user = os.getenv('POSTGRES_USER')
     password = os.getenv('POSTGRES_PASSWORD')
     db = os.getenv('POSTGRES_DB')
-
-    engine = create_engine(f'postgresql://{user}:{password}@postgres:5432/{db}')
+    host = 'postgres'
+    port = "5432"
+    
+    engine = create_engine(f'postgresql://{user}:{password}@{host}:{port}/{db}')
    
     # 3. DB'nin hazır olmasını bekle (Postgres'in ayağa kalkması zaman alabilir)
     retries = 5

@@ -158,7 +158,6 @@ weighted avg       0.76      0.76      0.76      1050
 
 # The feature that contributed most to improving my score was 'recency_at_cutoff ', 'purchase_momentum ', 'active_lifespan'. The other features, 'is_UK' and 'avg_order_value', did not cause any change in my Recall score.
 
-
 # -------------------------------- EVALUATION METRICS --------------------------------
 
 # 1. Confusion Matrix
@@ -200,5 +199,71 @@ plt.title('Churn Tahmininde En Etkili Özellikler')
 plt.savefig('analyze_img/feature_importance_churn.png')
 print("\nÖzellik Önem Sıralaması:")
 print(importances)
+
+# -------------------------------- SEGMENT LEVEL ANALYSIS --------------------------------
+# Let's examine the churn rates at the segment level.
+# Recall of 84% is great, but is the model more successful in the Champions segment or in the Hibernating segment (those who had already left by September)?
+
+# 1. Merge the Predictions with the segment information
+
+report_df = df_model.loc[y_test.index].copy()
+# I get Segment information from the final file that I created in process.py 
+segments = pd.read_csv("data/rfm_with_clusters2.csv")[['customer_id', 'segment']]
+report_df = report_df.merge(segments, on='customer_id')
+
+report_df['actual'] = y_test.values
+report_df['predicted'] = y_pred
+
+print("\n" + "="*60)
+print("--- SEGMENT LEVEL MODEL ERROR ANALYSIS ---")
+print("="*60)
+
+for s in report_df['segment'].unique():
+    subset = report_df[report_df['segment'] == s]
+    acc = accuracy_score(subset['actual'], subset['predicted'])
+    # Bu segmentte gerçekten churn olanların oranı
+    actual_churn_rate = subset['actual'].mean()
+    
+    print(f"Segment: {s:20} | Accuracy: %{acc*100:.1f} | Real Churn Rate: %{actual_churn_rate*100:.1f} | Customers: {len(subset)}")
+"""
+============================================================
+--- SEGMENT LEVEL MODEL ERROR ANALYSIS ---
+============================================================
+Segment: About to Sleep       | Accuracy: %62.7 | Real Churn Rate: %86.3 | Customers: 51
+Segment: Loyal Customers      | Accuracy: %57.1 | Real Churn Rate: %53.4 | Customers: 408
+Segment: Champions            | Accuracy: %82.8 | Real Churn Rate: %11.2 | Customers: 303
+Segment: Hibernating          | Accuracy: %100.0 | Real Churn Rate: %100.0 | Customers: 201
+Segment: At Risk              | Accuracy: %92.0 | Real Churn Rate: %96.6 | Customers: 87
+# The model performs best in the "Hibernating" segment, where it achieves 100% accuracy and correctly identifies all customers who have already churned. This is expected since these customers had no activity after the cut-off date.
+# The model also performs well in the "At Risk" segment, with 92% accuracy and a high real churn rate of 96.6%, indicating that it effectively captures customers who are likely to churn soon.
+# However, the model struggles with the "Loyal Customers" segment, where it has an accuracy of only 57.1% and a real churn rate of 53.4%. This suggests that the model has difficulty distinguishing between loyal customers who may have reduced activity and those who are actually at risk of churning.
+# The "Champions" segment shows a high accuracy of 82.8% and a low real churn rate of 11.2%, indicating that the model is good at identifying customers who are likely to remain loyal.
+# The "About to Sleep" segment has the lowest accuracy at 62.7% and a high real churn rate of 86.3%, suggesting that the model has some difficulty in accurately predicting churn for customers who are close to becoming inactive.
+"""
+
+final_output = report_df[['customer_id', 'segment', 'actual', 'predicted']]
+# Adding predicted probabilities to the final output for better interpretability(Who is at higher risk of churning)
+final_output['churn_probability'] = y_probs 
+final_output.to_csv("data/churn_predictions_final.csv", index=False)
+print("Final report prepared 'data/churn_predictions_final.csv' as ready!")
+
+
+# -------------------------------- FINAL EXPORT FOR DASHBOARD --------------------------------
+# 1. Selecting the necessary columns for the final report 
+final_report = report_df[['customer_id', 'segment', 'actual', 'predicted']].copy()
+
+# 2. Adding predicted probabilities to the final output for better interpretability(Who is at higher risk of churning)
+# For Looker Studio, I will create a "churn_probability_score" column that is the predicted probability multiplied by 100 and rounded to 2 decimal places. 
+final_report['churn_probability_score'] = (y_probs * 100).round(2)
+
+# 3. Saving the final report as a CSV file for Looker Studio
+final_report.to_csv("data/churn_predictions_final.csv", index=False)
+final_report.to_csv("data/looker_report.csv", index=False)
+
+print("\n" + "="*50)
+print("Final report prepared!")
+print("Final report prepared 'data/churn_predictions_final.csv' as ready!")
+print("Final report prepared 'data/looker_report.csv' as ready!")
+print("="*50)
 
 # docker compose exec analysis_app python src/predict_churn.py
