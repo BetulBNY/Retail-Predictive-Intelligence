@@ -247,7 +247,6 @@ final_output['churn_probability'] = y_probs
 final_output.to_csv("data/churn_predictions_final.csv", index=False)
 print("Final report prepared 'data/churn_predictions_final.csv' as ready!")
 
-
 # -------------------------------- FINAL EXPORT FOR DASHBOARD --------------------------------
 # 1. Selecting the necessary columns for the final report 
 final_report = report_df[['customer_id', 'segment', 'actual', 'predicted']].copy()
