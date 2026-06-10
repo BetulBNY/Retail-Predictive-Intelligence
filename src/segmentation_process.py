@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 import logging
-
 # Warnings ve logging ayarları
 logging.getLogger('matplotlib').setLevel(logging.CRITICAL) # Matplotlib'in sadece kritik hataları basmasını, bilgi uyarısı vermemesini sağlar
 warnings.filterwarnings("ignore", message=".*font.*")  
@@ -18,7 +17,6 @@ warnings.filterwarnings("ignore", message=".*font.*")
 df = pd.read_csv("data/cleaned_retail_data.csv")
 
 # -------------------------------- EDA --------------------------------
-
 print("Veri setinin ilk 5 satırı:-----------------------")
 print(df.head())
 print("\nVeri setinin genel bilgisi:-----------------------")
@@ -35,9 +33,9 @@ df["customer_id"] = pd.to_numeric(df["customer_id"], errors="coerce").astype("In
 
 # -------------------------------- RFM Analysis --------------------------------
 # K-Means algoritmasına çok fazla feature verirsem, algoritmanın kafası karışır (buna Curse of Dimensionality denir). 
-# RFM, bir müşterinin değerini %80 oranında özetleyen en güçlü 3 sütundur.
+# RFM, bir müşterinin değerini büyük oranda özetleyen en güçlü 3 sütundur.
 
-# Analyze date for recency calculation
+# Analyze date for recency calculation:
 # today = df["invoicedate"].max() + pd.Timedelta(days=1)  # Veri güncellendiğinde (yeni satır eklendiğinde) tüm müşterilerin Recency değeri değişecek.
 # Bu sepeble sabit değer vermeye karar verdim:
 print("Last day:", df["invoicedate"].max()) # Last day: 2011-12-09 12:50:00
@@ -149,7 +147,7 @@ print("Logaritmik dönüşüm sonrası RFM değerlerinin ve yeni featurelerin is
 print(rfm_expanded.describe([0.25, 0.5, 0.75, 0.97]).T)
 
 # -------------------------------- Scaling --------------------------------
-# K-Meansx algoritması öklid uzaklık temelli bir algoritma olduğu için, farklı ölçeklerdeki özellikler algoritmanın performansını olumsuz etkileyebilir.
+# K-Means algoritması öklid uzaklık temelli bir algoritma olduğu için, farklı ölçeklerdeki özellikler algoritmanın performansını olumsuz etkileyebilir.
 # Bu nedenle, RFM değerlerini aynı ölçeğe getirmek için Standard Scaling uygulayacağım.
 
 rfm_features = rfm_expanded[["recency", "frequency", "monetary", "unique_products", "avg_unit_price", "active_lifespan"]]
@@ -214,11 +212,10 @@ cluster_2
 Cluster 1: Yakın zamanda gelen ve çok harcayanlar
 Cluster 0: Çok uzun zamandır gelmeyen ve az harcayanlar
 """
-
-# -------------------------------- Base RFM K-Means  --------------------------------
+# -------------------------------- MODELING: K-Means  --------------------------------
 kmeans = KMeans(n_clusters=5, 
-                init='k-means++',      # başlangıç parametresi varsayılan olarak bu aslında, ama ben yine de belirttim
-                n_init=10,             # 10 farklı rastgele başlangıç noktasıyla 10 ayrı deneme yapar, en iyisini seçer.
+                init='k-means++',      # başlangıç merkezlerini rastgele seçmek yerine, verinin dağılımına göre daha akıllıca seçen bir yöntem. 
+                n_init=10,             # Modeli 10 farklı rastgele başlangıç noktasıyla 10 ayrı şekilde çalıştırır, en iyisini seçer. 
                 max_iter=300,          # Her bir denemede merkezleri kaydırma işlemini en fazla 300 adım boyunca sürdürür.
                 tol=0.0001,            # Merkezlerin yer değiştirmeyi ne zaman bırakacağını belirleyen durma eşiğidir. max_iter sınırına ulaşılmasa bile, merkezler bu değerden (0.0001) daha az hareket ediyorsa algoritmayı erken durdurarak zaman kazandırır.
                 random_state=42)
@@ -252,9 +249,7 @@ cluster
 
 # Burada da yine orijinal veri üzerinden segmentlere ayırdım veriyi çünkü sonuçları buna göre yorumalamak gerkiyor. 
 """
-
 # -------------------------------- SEGMENT NAME MAPPING --------------------------------
-
 # Hangi rakamın hangi isme geleceğini 'segment_analysis' tablosundaki ortalamalara bakarak belirledim.
 # 5 küme yapısına göre (R-F-M-UP-AP) en tutarlı eşleşme:
 
@@ -287,7 +282,6 @@ print("Segmentlere ayrıldıktan sonraki hali:\n")
 print(rfm_final_analysis[['customer_id', 'segment', 'recency', 'frequency', 'monetary']].head(10))
 
 # -------------------------------- DATA VISUALIZATION --------------------------------
-
 # 1) SCATTER PLOT
 # X ekseninde gerçek dünya recency değerleri, y ekseninde ise verinin çarpıklığını korumak için Log Transform edilmiş monetary değerleri kullanıldı.
 # Standard Scaled hali değil Log Transform halini seçmemin sebebi ilki daha çok DS'cilerin kümelerin matematiksel olarak ne kadar iyi
@@ -324,8 +318,8 @@ plt.savefig('analyze_img/customer_segments_final2.png')
 print("Scatter plot 'customer_segments_final.png' olarak kaydedildi!")
 
 # 2) PCA CUSTOMER SEGMENTS
-# Şu anki verim 5 boyutlu (Recency, Frequency, Monetary, Avg Unit Price, Unique Products).
-# Biz insanlar 5 boyutu hayal edemeyiz ve çizemeyiz. PCA ise Bu 5 boyutu, aralarındaki ilişkiyi bozmadan en fazla 
+# Şu anki verim 6 boyutlu (Recency, Frequency, Monetary, Avg Unit Price, Unique Products, active_lifespan).
+# Biz insanlar 6 boyutu hayal edemeyiz ve çizemeyiz. PCA ise Bu 6 boyutu, aralarındaki ilişkiyi bozmadan en fazla 
 # bilgiyi (varyansı) temsil eden 2 tane yapay eksene (PC1 ve PC2) indirger. 
 # Burada ise sadece scaled veriyi kullandım çünkü PCA "Varyans" (Değişkenlik) maksimizasyonu üzerine çalışır.
 # Eğer standartlaştırmazsam PCA, 10.000'lik devasa sayıların olduğu Monetary sütununu "en önemli bilgi kaynağı"
@@ -346,7 +340,7 @@ pca_df["segment"] = rfm_final_analysis["segment"]
 plt.figure(figsize=(10,8))
 sns.scatterplot(
     data=pca_df,
-    x="PC1",  # Genellikle verideki en büyük farkı oluşturan bileşendir. Benim verimde muhtmeleen "monetary + frequency"
+    x="PC1",  # Genellikle verideki en büyük farkı oluşturan bileşendir. Benim verimde muhtmelen "monetary + frequency"
     y="PC2",  # PC1'in açıklayamadığı ikinci en büyük farkı (belki de sadece Recency veya Avg Unit Price)
     hue="segment",
     palette="bright",
@@ -388,6 +382,6 @@ active_lifespan  0.457993  0.036909
 sadece RFM ile görülemeyen 'Premium' alıcıları bu dikey eksende ayrıştırabildi.
 """
 # RFM sonrası verileri kaydetme
-rfm_final_analysis.to_csv("data/rfm_with_clusters2.csv", index=False)
-print("Segmentasyon sonuçları 'data/rfm_with_clusters2.csv' olarak kaydedildi.")
+#rfm_final_analysis.to_csv("data/rfm_with_clusters2.csv", index=False)
+#print("Segmentasyon sonuçları 'data/rfm_with_clusters2.csv' olarak kaydedildi.")
 # docker compose exec analysis_app python src/process.py

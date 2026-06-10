@@ -1,13 +1,15 @@
+import warnings
 import pandas as pd
 
-df_retail = pd.read_csv("data/cleaned_retail_data.csv")
-df_rfm = pd.read_csv("data/rfm_with_clusters.csv")
 
-print(df_retail.head())
-print(df_retail.columns)
-print(df_retail.dtypes)
+df = pd.read_csv("data/cleaned_retail_data.csv")
 
-
-
-print(df_rfm.head())
-# docker compose exec analysis_app python src/testc.py
+# -------------------------------- EDA --------------------------------
+print("Veri setinin ilk 5 satırı:-----------------------")
+print(df.head())
+print("\nVeri setinin genel bilgisi:-----------------------")
+print(df.info())
+print("\nVeri setindeki benzersiz değer sayısı:-----------------------")
+print(df.nunique())
+print("Base df description:-----------------------")
+print(df.describe([0.25, 0.5, 0.75, 0.97]).T)
