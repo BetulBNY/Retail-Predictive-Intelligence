@@ -65,11 +65,11 @@ print(rfm.describe([0.25, 0.5, 0.75, 0.97]).T)
 
 """
 Outlier detection for RFM values:
-              count          mean           std      min       25%      50%       75%         97%        max
-customer_id  5878.0  15315.313542   1715.572666  12346.0  13833.25  15314.5  16797.75    18110.69    18287.0
-recency      5878.0    201.436883    209.454032      1.0      26.0     96.0     380.0       667.0      739.0
-frequency    5878.0      6.279347     12.979594      1.0       1.0      3.0       7.0        28.0      398.0
-monetary     5878.0   2869.961142  14002.181211     2.95  330.6825   835.97  2180.865  12880.4929  567769.68
+              count         mean           std      min      25%      50%      75%        97%        max
+customer_id  5249.0  15326.75843   1710.402354  12346.0  13856.0  15317.0  16808.0   18111.56    18287.0
+recency      5249.0   204.127262    171.487933      0.0     49.0    161.0    318.0      576.0      638.0
+frequency    5249.0       5.6767     11.282189      1.0      1.0      3.0      6.0       25.0      303.0
+monetary     5249.0  2538.698632  11676.992068      2.9   307.53   754.49  1994.35  11346.162  440248.41
 
 """
 # -------------------------------- Feature Engineering --------------------------------
@@ -174,7 +174,7 @@ visualizer.fit(rfm_scaled_df) # Hazırladığım scaled veri
 # Docker in görselleri gösterebileceği bir ekranı olmadığı için görseli kaydettim:
 visualizer.show(outpath="analyze_img/elbow_method.png") 
 
-# Görseli incelediğimde Elbow yöntemiyle optimum K sayısının 5 olduğunu gördüm.
+# Görseli incelediğimde Elbow yöntemiyle optimum K sayısının 4 olduğunu gördüm.
 # -----------------------------------------
 # 2) SILHOUETTE SCORE:
 # Sadece Elbow yöntemiyle optimal K değerini belirlemek yeterli olmayabilir, bu yüzden farklı K değerleri için Silhouette skorlarını da hesapladım.
@@ -188,16 +188,17 @@ for k in range(2, 8): # Farklı K değerleri için Silhouette skorlarını hesap
     print(f"K={k} için Silhouette Skoru: {score:.4f}")
 
 """
-K=2 için Silhouette Skoru: 0.3727
-K=3 için Silhouette Skoru: 0.2800
-K=4 için Silhouette Skoru: 0.2601
-K=5 için Silhouette Skoru: 0.2434
-K=6 için Silhouette Skoru: 0.2470
-K=7 için Silhouette Skoru: 0.2574
+--- Silhouette Scores ---
+K=2 için Silhouette Skoru: 0.3659
+K=3 için Silhouette Skoru: 0.2942
+K=4 için Silhouette Skoru: 0.2650
+K=5 için Silhouette Skoru: 0.2336
+K=6 için Silhouette Skoru: 0.2341
+K=7 için Silhouette Skoru: 0.2347
 
 Matematiksel Olarak En İyisi K=2 değeri çıktı. Küme sayısı arttıkça skor düzenli olarak düşüyor. 
 Matematiksel olarak veri setim en net iki büyük gruba (Örn: Aktifler ve Pasifler) ayrılıyor.
-Ancak iş mantığı açısından K = 5 değerini seçmeyi tercih ediyorum. Çünkü K=5 olduğunda segmentlerin karakteristik
+Ancak iş mantığı açısından K = 4 değerini seçmeyi tercih ediyorum. Çünkü K=4 olduğunda segmentlerin karakteristik
 özellikleri birbirinden daha net ayrılıyor ve bu da pazarlama stratejileri oluştururken daha anlamlı segmentler oluşturmamı sağlıyor.
 
 """
@@ -209,11 +210,11 @@ print(rfm_final_analysis_test.groupby('cluster_2')[['recency','monetary']].media
 """
            recency  monetary
 cluster_2                   
-0            383.0   295.505
-1             40.0  1774.390
+0             76.0   1713.89
+1            311.0    291.09
 # Bu şunu ifade ediyor: Veriyi en kaba haliyle ikiye böldüğümüzde 
-Cluster 1: Yakın zamanda gelen ve çok harcayanlar
-Cluster 0: Çok uzun zamandır gelmeyen ve az harcayanlar
+Cluster 0: Yakın zamanda gelen ve çok harcayanlar
+Cluster 1: Çok uzun zamandır gelmeyen ve az harcayanlar
 """
 # -------------------------------- K-MEANS MODELING   --------------------------------
 kmeans = KMeans(
@@ -229,7 +230,7 @@ rfm_final_analysis["cluster"] = kmeans.fit_predict(rfm_scaled_df)  # Scaled veri
 # rfm_scaled_df: Adaletli mesafe hesabı için sayıları eşitlediğimiz tablo (Eğitim burada yapılır)
 # rfm_final_analysis: Gerçek TL ve gün değerlerinin olduğu, insanların okuyabildiği orijinal tablo (Analiz burada yapılır)
 
-# Scaler ve KMeans modelini kaydet 
+# Scaler ve KMeans modelini kaydetme 
 joblib.dump(kmeans, "models/kmeans_model.pkl")
 joblib.dump(scaler, "models/kmeans_scaler.pkl")
 print("\nKMeans ve Scaler modelleri 'models/' klasörüne kaydedildi.")
@@ -251,11 +252,10 @@ print(segment_analysis)
         recency        frequency        monetary               unique_products        avg_unit_price        customer_id
            mean median      mean median     mean  median count            mean median           mean median       count
 cluster                                                                                                                
-0         370.0  386.0       1.5    1.0    495.8   292.9   535            13.0   10.0            6.7    6.0         535
-1         157.1   88.0       3.9    3.0   1127.7   928.4  2251            57.5   48.0            3.2    3.0        2251
-2         103.7   70.0       1.2    1.0    369.9   244.6   662            21.5   16.0            2.5    2.4         662
-3         523.3  512.0       1.3    1.0    392.8   246.8   929            23.5   18.0            2.6    2.6         929
-4          50.0   23.0      14.0   11.0   5458.3  4127.9  1501           183.3  156.0            3.2    3.0        1501
+0         309.3  301.5       1.3    1.0    469.7   250.8   622            13.4   10.5            6.2    5.4         622
+1          63.6   37.0      12.7   10.0   4895.2  3685.5  1341           162.8  137.0            3.2    3.0        1341
+2         184.6  160.0       3.5    3.0   1036.2   824.5  2026            51.7   43.0            3.3    3.1        2026
+3         333.2  326.0       1.2    1.0    343.7   233.2  1260            23.1   18.0            2.4    2.5        1260
 
 # Burada da yine orijinal veri üzerinden segmentlere ayırdım veriyi çünkü sonuçları buna göre yorumalamak gerkiyor. 
 """
@@ -275,7 +275,6 @@ loyal_cluster = by_recency[1]
 # At Risk → daha yüksek frequency (bir zamanlar aktifti)
 # Lost    → daha düşük frequency (zaten hiç aktif olmadı)
 remaining = by_recency[2:]
-
 
 # YENİ — avg_unit_price'a göre ayır: pahalı ürün alıcısı → At Risk (değeri yüksek)
 avg_price_by_cluster = rfm_final_analysis.groupby('cluster')['avg_unit_price'].mean()
@@ -300,6 +299,16 @@ print("\nMapping Doğrulama:")
 print(rfm_final_analysis.groupby('segment')['recency'].median().sort_values())
 print(rfm_final_analysis[['customer_id','segment','recency','frequency','monetary']].head(10))
  
+print("\nCluster bazlı detay (tüm metrikler):")
+print(rfm_final_analysis.groupby('segment').agg(
+    recency_min   = ('recency',        'min'),
+    recency_max   = ('recency',        'max'),
+    recency_med   = ('recency',        'median'),
+    freq_med      = ('frequency',      'median'),
+    monetary_med  = ('monetary',       'median'),
+    avg_price_med = ('avg_unit_price', 'median'),
+    count         = ('customer_id',    'count')
+).round(1))
  
 # -------------------------------- DATA VISUALIZATION --------------------------------
 # 1) SCATTER PLOT
@@ -383,12 +392,12 @@ print("Loadings tablosu sonuçları:\n",loadings)
 """
 Loadings tablosu sonuçları:
                        PC1       PC2
-recency         -0.357972  0.129373
-frequency        0.485775  0.056945
-monetary         0.480992  0.090911
-unique_products  0.441103 -0.064039
-avg_unit_price  -0.013972  0.983001
-active_lifespan  0.457993  0.036909
+recency         -0.362658  0.012260
+frequency        0.487620  0.035729
+monetary         0.480506  0.054105
+unique_products  0.434712 -0.097467
+avg_unit_price  -0.011929  0.992494
+active_lifespan  0.459024  0.033193
 
 # PC1 bileşeni; Eğer bir müşterinin PC1 skoru yüksekse; o müşteri çok para bırakmış (Monetary), çok sık gelmiş (Frequency), çok çeşit ürün almış (Unique_products) ve en son gelişi üzerinden çok az zaman geçmiş (Recency - negatif olduğu için ters orantılı).
 # PC2 bileşeni; PC2 ise neredeyse tamamen (0.98 loading ile) 'Average Unit Price' üzerinden tanımlanıyor. Bu şunu gösteriyor: Bir müşterinin pahalı ürün tercih etmesi, onun alışveriş sıklığı veya toplam harcamasından bağımsız bir boyut. Bu yüzden modelim,
@@ -401,6 +410,6 @@ save_cols = [
     'avg_order_value', 'active_lifespan', 'cluster', 'segment'
 ]
 rfm_final_analysis[save_cols].to_csv("data/rfm_with_clusters.csv", index=False)
-print("\nSegmentasyon sonuçları kaydedildi: data/rfm_with_clusters2.csv")
+print("\nSegmentasyon sonuçları kaydedildi: data/rfm_with_clusters.csv")
 
 # docker compose exec analysis_app python src/segmentation_process.py
